@@ -1,6 +1,7 @@
 import pandas as pd
 import time
 import joblib
+import os  # To calculate physical file size on disk
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
@@ -8,77 +9,76 @@ from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import accuracy_score
 
 def run():
-    print("="*85)
-    print(f"{'PHASE 4: 10-FOLD CV & LATENCY ANALYSIS':^85}")
-    print("="*85)
+    print("="*95)
+    print(f"{'PHASE 4: 10-FOLD CV, LATENCY & STORAGE ANALYSIS':^95}")
+    print("="*95)
     
-    # 1. Load Data
+    # 1. Load Preprocessed Data from Phase 3
     try:
         train = pd.read_csv('train_data.csv')
-        # Using the blind and truth files generated in Phase 3
-        test_blind = pd.read_csv('test_no_labels.csv') # 16 columns (Real world input)
-        test_truth = pd.read_csv('test_with_labels.csv') # 17 columns (Validation key)
+        test_blind = pd.read_csv('test_no_labels.csv') # 16 features (No target)
+        test_truth = pd.read_csv('test_with_labels.csv') # 17 columns (Ground truth)
     except FileNotFoundError:
         print("Error: Required CSV files not found! Please run Phase 3.")
         return
 
-    # 2. Prepare Features and Targets
+    # 2. Prepare Features (X) and Target Labels (y)
     X_train, y_train = train.drop(columns=['Attack type']), train['Attack type']
     X_test = test_blind 
     y_test = test_truth['Attack type']
 
-    # 3. Updated Model Definitions to Match Base Paper Benchmarks
+    # 3. Define Models (Pruned DT Focus + Benchmarks)
     models = {
-        # Removing max_depth allows the tree to reach the 99.5% paper benchmark
-        "Decision Tree": DecisionTreeClassifier(random_state=42), 
-        
-        # 100 estimators is the standard for the 99.7% RF paper result
+        # Pruning to depth 10 ensures high accuracy with a small memory footprint
+        "Pruned Decision Tree": DecisionTreeClassifier(max_depth=10, random_state=42),
         "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
-        
-        # k=5 is the optimal balance for KNN accuracy in WSN-DS
         "KNN (k=5)": KNeighborsClassifier(n_neighbors=5)
     }
 
     kf = KFold(n_splits=10, shuffle=True, random_state=42)
     
-    # Table Header
+    # Header for Comparison Table
     header = f"{'Model':<22} | {'CV Mean Acc':<12} | {'Test Acc':<10} | {'Latency/Pkt':<12}"
     print(header)
     print("-" * len(header))
 
+    dt_size_kb = 0 
+
     for name, model in models.items():
-        # A. 10-Fold Cross-Validation on Training Data
+        # A. 10-Fold Cross-Validation (Stability Check)
         cv_scores = cross_val_score(model, X_train, y_train, cv=kf, n_jobs=-1)
         mean_cv = cv_scores.mean() * 100
         
-        # B. Final Training
+        # B. Final Training on Training Dataset
         model.fit(X_train, y_train)
         
-        # C. Latency Measurement (Simulating Real-World Inference)
+        # C. Latency Measurement (Simulated Inference)
         start_time = time.time()
         y_pred = model.predict(X_test)
-        end_time = time.time() - start_time
+        execution_time = time.time() - start_time
         
-        # D. Evaluation against Ground Truth
-        latency_per_packet = end_time / len(X_test)
+        # D. Metrics Calculation
+        latency_per_packet = execution_time / len(X_test)
         test_acc = accuracy_score(y_test, y_pred) * 100
 
-        # Print Row
         print(f"{name:<22} | {mean_cv:>10.2f}% | {test_acc:>8.2f}% | {latency_per_packet:.8f}s")
         
-        # --- UPDATED SAVING SECTOR ---
-        # Save each model for the multi-model dashboard comparison
-        if name == "Decision Tree":
+        # E. Model Saving Sector
+        if name == "Pruned Decision Tree":
             joblib.dump(model, 'wsn_dt.pkl')
-            # Keeping backward compatibility for the main model file
-            joblib.dump(model, 'wsn_dos_model.pkl')
+            joblib.dump(model, 'wsn_dos_model.pkl') # Backward compatibility
+            # Measure physical file size in KB
+            dt_size_kb = os.path.getsize('wsn_dt.pkl') / 1024
         elif name == "Random Forest":
             joblib.dump(model, 'wsn_rf.pkl')
         elif name == "KNN (k=5)":
             joblib.dump(model, 'wsn_knn.pkl')
 
+    print("-" * len(header))
+    # Proof of Lightweight Optimization
+    print(f"📦 [STORAGE METRIC]: Pruned Decision Tree Model Size: {dt_size_kb:.2f} KB")
     print("=" * len(header))
-    print("[SUCCESS]: All three models (DT, RF, KNN) have been saved with paper-aligned settings.")
+    print("[SUCCESS]: Models evaluated and saved. Ready for real-time terminal testing.")
 
 if __name__ == "__main__":
     run()

@@ -9,7 +9,7 @@ def run():
     le = LabelEncoder()
     df['Attack type'] = le.fit_transform(df['Attack type'])
     
-    # Consistent Imputation
+    
     for col in df.columns:
         df[col] = df[col].fillna(df[col].mean())
 

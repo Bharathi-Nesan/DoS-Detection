@@ -7,7 +7,7 @@ def run():
     X = df.drop(columns=['Attack type'])
     y = df['Attack type']
 
-    # random_state=42 ensures the feature ranking is identical every run
+    
     selector = RandomForestClassifier(n_estimators=100, random_state=42)
     selector.fit(X, y)
 
